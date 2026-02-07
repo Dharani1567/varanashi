@@ -1,67 +1,59 @@
-from crewai import Agent, Task, Crew
-from langchain_google_genai import ChatGoogleGenerativeAI
-from utils.api_guard import safe_llm_call
+import os
+from utils.grok_client import call_grok
 
 
 def platform_adapter_agent(draft_content, platform):
     """
-    Uses LLM via CrewAI to adapt content tone for a specific platform.
-    Includes safe fallback if API fails.
+    Adapts content tone for a specific platform using Grok.
+    Fully safe: no CrewAI, no Gemini, deterministic fallback.
     """
 
-    if not draft_content:
+    if not draft_content or not draft_content.strip():
         return {
             "agent": "Platform Adapter Agent",
             "adapted_content": "",
             "explanation": "No draft content provided"
         }
 
-    def llm_logic():
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
-            temperature=0.4
-        )
+    # ---------- FALLBACK (NO GROK KEY) ----------
+    if not os.getenv("GROK_API_KEY"):
+        if platform == "LinkedIn":
+            adapted = draft_content
+        elif platform == "Instagram":
+            adapted = draft_content + " #insights"
+        else:  # Twitter / X
+            adapted = draft_content[:280]
 
-        agent = Agent(
-            role="Platform Adapter Agent",
-            goal="Adapt content tone while preserving original meaning",
-            backstory=(
-                "You specialize in rewriting content to match platform norms "
-                "without changing intent, facts, or sentiment."
-            ),
-            llm=llm,
-            verbose=False
-        )
+        return {
+            "agent": "Platform Adapter Agent",
+            "adapted_content": adapted,
+            "explanation": "Rule-based fallback used (no Grok API key)"
+        }
 
-        task = Task(
-            description=(
-                f"Rewrite the following post for {platform}:\n\n"
-                f"'{draft_content}'\n\n"
-                "Rules:\n"
-                "- Preserve original meaning\n"
-                "- Adjust tone for the platform\n"
-                "- No hate, sarcasm, or exaggeration\n"
-                "- No emojis unless platform is Instagram\n"
-                "- Keep it concise"
-            ),
-            expected_output="Platform-appropriate rewritten post."
-        )
+    prompt = (
+        f"Rewrite the following post for {platform}.\n"
+        "Rules:\n"
+        "- Preserve original meaning\n"
+        "- Adjust tone for the platform\n"
+        "- No hate, sarcasm, or exaggeration\n"
+        "- No emojis unless platform is Instagram\n"
+        "- Keep it concise\n\n"
+        f"Post:\n{draft_content}"
+    )
 
-        crew = Crew(
-            agents=[agent],
-            tasks=[task]
-        )
+    try:
+        adapted_content = call_grok(prompt)
 
-        return crew.kickoff().strip()
+        return {
+            "agent": "Platform Adapter Agent",
+            "adapted_content": adapted_content.strip(),
+            "explanation": f"Content adapted for {platform} using Grok"
+        }
 
-    def fallback(reason):
-        # safest fallback: return original content unchanged
-        return draft_content
-
-    adapted_content = safe_llm_call(llm_logic, fallback)
-
-    return {
-        "agent": "Platform Adapter Agent",
-        "adapted_content": adapted_content,
-        "explanation": f"Content adapted for {platform} using LLM with safe fallback"
-    }
+    except Exception:
+        # ---------- SAFE FALLBACK ----------
+        return {
+            "agent": "Platform Adapter Agent",
+            "adapted_content": draft_content,
+            "explanation": "Fallback used after Grok failure"
+        }

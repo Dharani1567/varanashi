@@ -32,7 +32,7 @@ if st.button("Run Agents") and topic:
     timing = timing_intelligence_agent(platform)
 
     decision = decision_agent(
-        adapted["adapted_content"],
+    
         engagement,
         safety,
         context,

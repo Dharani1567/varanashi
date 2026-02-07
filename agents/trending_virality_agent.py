@@ -1,15 +1,14 @@
-from crewai import Agent, Task, Crew
-from langchain_google_genai import ChatGoogleGenerativeAI
-from datetime import datetime, timedelta
+import os
+from utils.grok_client import call_grok
 
 
 def trending_virality_agent(adapted_content, platform):
     """
-    Uses an LLM to estimate trend relevance and virality signals.
-    Decisions remain rule-based; this agent provides a signal only.
+    Estimates trend relevance and virality signals.
+    Uses Grok for suggestion only, decision remains rule-based.
     """
 
-    if not adapted_content:
+    if not adapted_content or not adapted_content.strip():
         return {
             "agent": "Trending & Virality Agent",
             "trend_score": 0,
@@ -18,84 +17,76 @@ def trending_virality_agent(adapted_content, platform):
             "explanation": "No content provided for trend analysis"
         }
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
-        temperature=0.3
+    # ---------- FALLBACK (NO GROK KEY) ----------
+    if not os.getenv("GROK_API_KEY"):
+        return {
+            "agent": "Trending & Virality Agent",
+            "trend_score": 30,
+            "vote": "warn",
+            "suggested_hooks": [],
+            "explanation": "Rule-based fallback used (no Grok API key)"
+        }
+
+    prompt = (
+        f"You are analyzing social media trends for {platform}.\n"
+        "Analyze the post below and respond with:\n"
+        "- Trend Level: LOW / MEDIUM / HIGH\n"
+        "- Suggested Hooks: up to 3 short phrases\n\n"
+        "Rules:\n"
+        "- Be conservative\n"
+        "- Do NOT claim real-time data\n"
+        "- Hooks must be generic phrases\n\n"
+        f"Post:\n{adapted_content}"
     )
 
-    agent = Agent(
-        role="Trend & Virality Analyst",
-        goal="Estimate how aligned the content is with current platform trends",
-        backstory=(
-            "You analyze internet-wide patterns to estimate what is trending "
-            "on different social platforms without claiming real-time accuracy."
-        ),
-        llm=llm,
-        verbose=False
-    )
+    try:
+        response = call_grok(prompt).lower()
 
-    task = Task(
-        description=(
-            f"Analyze the following post for trend relevance on {platform}:\n\n"
-            f"'{adapted_content}'\n\n"
-            "Return ONLY a JSON object with:\n"
-            "{\n"
-            '  "trend_level": "LOW | MEDIUM | HIGH",\n'
-            '  "suggested_hooks": ["hook1", "hook2"]\n'
-            "}\n"
-            "Rules:\n"
-            "- Hooks must be short phrases\n"
-            "- Do not invent real-time claims\n"
-            "- Be conservative\n"
-        ),
-        expected_output='JSON with trend_level and suggested_hooks.'
-    )
+        # -------- SIMPLE PARSING --------
+        if "high" in response:
+            trend_level = "HIGH"
+        elif "medium" in response:
+            trend_level = "MEDIUM"
+        else:
+            trend_level = "LOW"
 
-    crew = Crew(
-        agents=[agent],
-        tasks=[task]
-    )
+        # Extract hooks (very defensive)
+        suggested_hooks = []
+        lines = response.splitlines()
+        for line in lines:
+            if "-" in line and len(suggested_hooks) < 3:
+                hook = line.replace("-", "").strip()
+                if hook:
+                    suggested_hooks.append(hook)
 
-    raw = crew.kickoff().strip()
+        # -------- MAP TO SCORE --------
+        if trend_level == "HIGH":
+            trend_score = 80
+            vote = "approve"
+            explanation = "Strong alignment with current trends"
+        elif trend_level == "MEDIUM":
+            trend_score = 55
+            vote = "warn"
+            explanation = "Moderate trend alignment"
+        else:
+            trend_score = 25
+            vote = "warn"
+            explanation = "Low trend relevance detected"
 
-    # --- Safe parsing (simple & defensive) ---
-    trend_level = "LOW"
-    suggested_hooks = []
+        return {
+            "agent": "Trending & Virality Agent",
+            "trend_score": trend_score,
+            "vote": vote,
+            "suggested_hooks": suggested_hooks,
+            "explanation": explanation
+        }
 
-    if "HIGH" in raw:
-        trend_level = "HIGH"
-    elif "MEDIUM" in raw:
-        trend_level = "MEDIUM"
-
-    if "[" in raw and "]" in raw:
-        try:
-            hooks_part = raw.split("[", 1)[1].split("]", 1)[0]
-            suggested_hooks = [
-                h.strip().strip('"').strip("'")
-                for h in hooks_part.split(",")
-                if h.strip()
-            ]
-        except Exception:
-            suggested_hooks = []
-
-    # --- Convert signal → deterministic score & vote ---
-    if trend_level == "HIGH":
-        trend_score = 80
-        vote = "approve"
-        explanation = "Strong alignment with current trends"
-    elif trend_level == "MEDIUM":
-        trend_score = 55
-        vote = "warn"
-        explanation = "Moderate trend alignment; relevance may be limited"
-    else:
-        trend_score = 25
-        vote = "warn"
-        explanation = "Low trend relevance detected"
-
-    return {
-        "agent": "Trending & Virality Agent",
-        "trend_score": trend_score,
-        "vote": vote,
-        "suggested_hooks": suggested_hooks[:3],
-        "explanation": explanation
-    }
+    except Exception:
+        # ---------- SAFE FALLBACK ----------
+        return {
+            "agent": "Trending & Virality Agent",
+            "trend_score": 30,
+            "vote": "warn",
+            "suggested_hooks": [],
+            "explanation": "Fallback used after Grok failure"
+        }

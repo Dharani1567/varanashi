@@ -1,44 +1,46 @@
-from crewai import Agent, Task, Crew
-from langchain_google_genai import ChatGoogleGenerativeAI
-from utils.api_guard import safe_llm_call
+import os
+from utils.grok_client import call_grok
 
 
 def content_creator_agent(topic):
     """
-    LLM-based content creator with safe fallback.
+    Content Creator Agent using Grok with safe fallback.
+    No CrewAI. No Gemini.
     """
 
-    def llm_logic():
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
-            temperature=0.6
-        )
+    if not topic or not topic.strip():
+        return {
+            "agent": "Content Creator Agent",
+            "draft": "",
+            "explanation": "No topic provided"
+        }
 
-        agent = Agent(
-            role="Content Creator Agent",
-            goal="Generate neutral social media drafts",
-            llm=llm
-        )
+    # ---------- FALLBACK (NO API KEY) ----------
+    if not os.getenv("GROK_API_KEY"):
+        return {
+            "agent": "Content Creator Agent",
+            "draft": f"Here’s a thought on {topic}. Curious to hear perspectives.",
+            "explanation": "Rule-based fallback used (no Grok API key)"
+        }
 
-        task = Task(
-            description=f"Write a neutral social media post about {topic}.",
-            expected_output="Short post draft."
-        )
+    prompt = (
+        "Write a neutral, professional social media post about the topic below.\n"
+        "Do NOT use emojis. Keep it short and thoughtful.\n\n"
+        f"Topic: {topic}"
+    )
 
-        crew = Crew(
-            agents=[agent],
-            tasks=[task]
-        )
+    try:
+        draft = call_grok(prompt)
 
-        return crew.kickoff().strip()
+        return {
+            "agent": "Content Creator Agent",
+            "draft": draft.strip(),
+            "explanation": "Draft generated using Grok"
+        }
 
-    def fallback(reason):
-        return f"Here’s a thought on {topic}. Curious to hear perspectives."
-
-    draft = safe_llm_call(llm_logic, fallback)
-
-    return {
-        "agent": "Content Creator Agent",
-        "draft": draft,
-        "explanation": "Draft generated using LLM with safe fallback"
-    }
+    except Exception:
+        return {
+            "agent": "Content Creator Agent",
+            "draft": f"Here’s a thought on {topic}. Curious to hear perspectives.",
+            "explanation": "Fallback used after Grok failure"
+        }
