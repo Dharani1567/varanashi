@@ -1,5 +1,5 @@
 import os
-from utils.grok_client import call_grok
+from utils.llm_client import call_llm
 
 
 def context_sarcasm_agent(adapted_content):
@@ -26,7 +26,7 @@ def context_sarcasm_agent(adapted_content):
     )
 
     try:
-        response = call_grok(prompt).lower()
+        response = call_llm(prompt)
         ambiguity_score = 70 if "ambiguous" in response else 30
         vote = "warn" if ambiguity_score >= 60 else "approve"
 

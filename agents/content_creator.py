@@ -1,5 +1,5 @@
 import os
-from utils.grok_client import call_grok
+from utils.llm_client import call_llm
 
 
 def content_creator_agent(topic):
@@ -30,7 +30,7 @@ def content_creator_agent(topic):
     )
 
     try:
-        draft = call_grok(prompt)
+        draft = call_llm(prompt)
 
         return {
             "agent": "Content Creator Agent",

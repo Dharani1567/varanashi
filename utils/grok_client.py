@@ -16,14 +16,31 @@ def call_grok(prompt):
     }
 
     payload = {
-        "model": "grok-2",
+        # ✅ SAFEST MODEL
+        "model": "grok-2-latest",
         "messages": [
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.2
     }
 
-    response = requests.post(GROK_API_URL, headers=headers, json=payload)
-    response.raise_for_status()
+    response = requests.post(
+        GROK_API_URL,
+        headers=headers,
+        json=payload,
+        timeout=20
+    )
 
-    return response.json()["choices"][0]["message"]["content"]
+    # 🔍 SHOW REAL ERROR IF ANY
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Grok API error {response.status_code}: {response.text}"
+        )
+
+    data = response.json()
+
+    # 🔒 Defensive parsing
+    if "choices" not in data or not data["choices"]:
+        raise RuntimeError(f"Invalid Grok response: {data}")
+
+    return data["choices"][0]["message"]["content"]

@@ -1,5 +1,5 @@
 import os
-from utils.grok_client import call_grok
+from utils.llm_client import call_llm
 
 
 def platform_adapter_agent(draft_content, platform):
@@ -42,7 +42,7 @@ def platform_adapter_agent(draft_content, platform):
     )
 
     try:
-        adapted_content = call_grok(prompt)
+        adapted_content = call_llm(prompt)
 
         return {
             "agent": "Platform Adapter Agent",

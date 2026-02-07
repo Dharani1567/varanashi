@@ -1,5 +1,5 @@
 import os
-from utils.grok_client import call_grok
+from utils.llm_client import call_llm
 
 
 def trending_virality_agent(adapted_content, platform):
@@ -40,7 +40,7 @@ def trending_virality_agent(adapted_content, platform):
     )
 
     try:
-        response = call_grok(prompt).lower()
+        response = call_llm(prompt).lower()
 
         # -------- SIMPLE PARSING --------
         if "high" in response:
